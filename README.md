@@ -64,16 +64,27 @@ client/src
 | Tasks | `GET/POST /projects/:id/tasks`, `GET/PUT/DELETE /tasks/:id`, `PUT /tasks/:id/move`, `GET /tasks/mine`, `GET /tasks/:id/activity` |
 | Comments | `GET/POST /tasks/:id/comments`, `PUT/DELETE /comments/:id` |
 | Notifications | `GET /notifications`, `PUT /notifications/read-all`, `PUT /notifications/:id/read`, `DELETE /notifications/:id` |
-| Other | `GET /dashboard`, `GET /search?q=`, `GET /users/search?q=`, `GET /users/online` |
+| Other | `GET /dashboard`, `GET /search?q=`, `GET /users/search?q=` |
 
 ## Socket.io events
-Client → server: `project:join {projectId, presence}`, `project:leave`, `typing {projectId, taskId, isTyping}`
+Client → server: `project:join {projectId, presence}`, `project:leave`, `typing {projectId, taskId, isTyping}`, `presence:online` (ack = online user ids)
 Server → client: `task:created|updated|moved|deleted`, `comment:created|updated|deleted`, `activity:new`,
 `presence:update`, `presence:user`, `notification:new`, `project:added|removed|updated`, `typing`
 
-## Deploy
-- Database: MongoDB Atlas (free cluster) -> connection string
-- Server: Render Web Service (root dir `server`, build `npm install`, start `npm start`)
-  env: `MONGO_URI`, `JWT_SECRET`, `CLIENT_URL` (= Netlify URL)
-- Client: Netlify (base dir `client`, build `npm run build`, publish `dist`)
-  env: `VITE_API_URL` (= Render URL)
+## Deploy on Vercel (2 projects from one GitHub repo)
+Services: MongoDB Atlas (database) + Redis (Upstash / Vercel Marketplace) + 2 Vercel projects.
+
+**Why Redis?** Vercel runs many function instances. Redis lets them share socket rooms, events and presence.
+
+1. **Atlas**: free cluster -> user -> Network Access `0.0.0.0/0` -> connection string.
+2. **Redis**: create a free Redis database -> copy the `rediss://...` URL.
+3. **Vercel project #1 (server)**: Root Directory `server`, Framework "Other".
+   Env: `MONGO_URI`, `JWT_SECRET`, `REDIS_URL`, `CRON_SECRET`, `CLIENT_URL` (client URL, set after step 4).
+4. **Vercel project #2 (client)**: Root Directory `client`, Framework Vite.
+   Env: `VITE_API_URL` = server project URL (no trailing slash), `VITE_SOCKET_PATH` = `/api/socket-io/socket.io`.
+5. Put the client URL into server env `CLIENT_URL`, then redeploy the server.
+6. Check `https://<server>/api/health` -> `{"status":"ok"}`.
+
+Notes: WebSocket connections are closed when a function hits its max duration; the client reconnects and re-joins automatically.
+`server/vercel.json` runs the due-soon reminder once a day via Vercel Cron.
+Local development needs no Redis (leave `REDIS_URL` empty).

@@ -8,6 +8,7 @@ import * as comments from '../controllers/commentController.js';
 import * as notifications from '../controllers/notificationController.js';
 import { dashboard } from '../controllers/dashboardController.js';
 import { search } from '../controllers/searchController.js';
+import { runDueSoon } from '../jobs/dueSoon.js';
 
 const router = Router();
 
@@ -17,6 +18,16 @@ router.get('/health', (_req, res) => res.json({ status: 'ok' }));
 router.post('/auth/register', auth.register);
 router.post('/auth/login', auth.login);
 
+/* Vercel Cron calls this daily (sends "Authorization: Bearer $CRON_SECRET") */
+router.get('/cron/due-soon', async (req, res, next) => {
+  try {
+    if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    res.json({ notified: await runDueSoon() });
+  } catch (err) { next(err); }
+});
+
 /* everything below needs a valid JWT */
 router.use(protect);
 
@@ -25,7 +36,6 @@ router.put('/auth/me', auth.updateMe);
 router.put('/auth/password', auth.changePassword);
 
 router.get('/users/search', users.searchUsers);
-router.get('/users/online', users.onlineUsers);
 
 router.get('/dashboard', dashboard);
 router.get('/search', search);

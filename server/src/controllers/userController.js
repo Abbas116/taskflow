@@ -1,6 +1,5 @@
 import User from '../models/User.js';
 import { asyncHandler } from '../utils/ApiError.js';
-import { getOnlineUserIds } from '../socket/index.js';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -14,5 +13,3 @@ export const searchUsers = asyncHandler(async (req, res) => {
     .limit(8);
   res.json(users);
 });
-
-export const onlineUsers = asyncHandler(async (_req, res) => res.json(getOnlineUserIds()));

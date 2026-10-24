@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    { "source": "/api/((?!socket-io).*)", "destination": "/api" }
+  ],
+  "crons": [
+    { "path": "/api/cron/due-soon", "schedule": "0 6 * * *" }
+  ]
+}

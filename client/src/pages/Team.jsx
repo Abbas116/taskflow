@@ -27,10 +27,12 @@ export default function Team() {
   // keep the list live when members change while this page is open
   useEffect(() => {
     if (!socket || !projectId) return undefined;
-    socket.emit('project:join', { projectId, presence: false });
+    const join = () => socket.emit('project:join', { projectId, presence: false });
+    join();
+    socket.on('connect', join);
     const h = ({ projectId: id }) => id === projectId && load();
     socket.on('project:updated', h);
-    return () => { socket.off('project:updated', h); socket.emit('project:leave', { projectId }); };
+    return () => { socket.off('connect', join); socket.off('project:updated', h); socket.emit('project:leave', { projectId }); };
   }, [socket, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <Spinner className="py-24" />;

@@ -1,8 +1,10 @@
 import Task from '../models/Task.js';
 import { notify } from '../services/notify.js';
 
+// Long-running servers only (local / Render): every 30 minutes. On Vercel, /api/cron/due-soon is used instead.
 // Every 30 minutes: notify assignees about tasks due within 24 hours (once per due date).
-async function run() {
+export async function runDueSoon() {
+  let count = 0;
   const horizon = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const tasks = await Task.find({
     isDone: false,
@@ -22,11 +24,13 @@ async function run() {
     });
     task.dueNotified = true;
     await task.save();
+    count += 1;
   }
+  return count;
 }
 
 export function startDueSoonJob() {
-  const safeRun = () => run().catch((err) => console.error('dueSoon job failed:', err.message));
+  const safeRun = () => runDueSoon().catch((err) => console.error('dueSoon job failed:', err.message));
   safeRun();
   setInterval(safeRun, 30 * 60 * 1000);
 }

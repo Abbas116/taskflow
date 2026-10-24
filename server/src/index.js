@@ -2,7 +2,7 @@ import 'dotenv/config';
 import http from 'http';
 import connectDB from './config/db.js';
 import { createApp, allowedOrigins } from './app.js';
-import { initSocket } from './socket/index.js';
+import { initSocket, attachRedisAdapter } from './socket/index.js';
 import { startDueSoonJob } from './jobs/dueSoon.js';
 
 if (!process.env.JWT_SECRET) {
@@ -15,7 +15,8 @@ const PORT = process.env.PORT || 5000;
 async function start() {
   await connectDB();
   const server = http.createServer(createApp());
-  initSocket(server, allowedOrigins);
+  const io = initSocket(server, allowedOrigins);
+  if (await attachRedisAdapter(io)) console.log('Socket.io: Redis adapter enabled');
   startDueSoonJob();
   server.listen(PORT, () => console.log(`TaskFlow API + Socket.io listening on http://localhost:${PORT}`));
 }

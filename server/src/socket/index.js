@@ -1,57 +1,71 @@
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { Emitter } from '@socket.io/redis-emitter';
 import User from '../models/User.js';
 import Project from '../models/Project.js';
+import connectDB from '../config/db.js';
+import { redisClient, redisPair } from './redis.js';
 
-let io = null;
+let io = null; // set only in processes that accept socket connections
+let emitter = null; // used by REST-only processes (Vercel REST function) to reach sockets through Redis
 
-// userId -> Set(socketId): who is online anywhere in the app
-const userSockets = new Map();
-// projectId -> Map(userId -> Set(socketId)): who is viewing a board right now
-const boardPresence = new Map();
-
-export const getOnlineUserIds = () => [...userSockets.keys()];
-export const emitToProject = (projectId, event, payload) =>
-  io?.to(`project:${projectId}`).emit(event, payload);
-export const emitToUser = (userId, event, payload) =>
-  io?.to(`user:${userId}`).emit(event, payload);
-
-function presenceList(projectId) {
-  return [...(boardPresence.get(String(projectId))?.keys() || [])];
-}
-
-function addPresence(projectId, userId, socketId) {
-  if (!boardPresence.has(projectId)) boardPresence.set(projectId, new Map());
-  const users = boardPresence.get(projectId);
-  if (!users.has(userId)) users.set(userId, new Set());
-  users.get(userId).add(socketId);
-}
-
-function removePresence(projectId, userId, socketId) {
-  const users = boardPresence.get(projectId);
-  if (!users) return;
-  const sockets = users.get(userId);
-  sockets?.delete(socketId);
-  if (sockets && sockets.size === 0) users.delete(userId);
-  if (users.size === 0) boardPresence.delete(projectId);
-  io.to(`project:${projectId}`).emit('presence:update', { projectId, users: presenceList(projectId) });
-}
-
-// Called when a member is removed from a project: kick their sockets out of the room.
-export function kickFromProject(projectId, userId) {
-  if (!io) return;
-  io.in(`user:${userId}`).socketsLeave(`project:${projectId}`);
-  const users = boardPresence.get(String(projectId));
-  if (users?.delete(String(userId))) {
-    io.to(`project:${projectId}`).emit('presence:update', {
-      projectId: String(projectId),
-      users: presenceList(projectId),
-    });
+// Where should events go? Local io if this process hosts sockets, otherwise the Redis emitter.
+function bus() {
+  if (io) return io;
+  if (emitter === null) {
+    const client = redisClient();
+    emitter = client ? new Emitter(client) : false;
   }
+  return emitter || null;
+}
+
+export const emitToProject = (projectId, event, payload) => bus()?.to(`project:${projectId}`).emit(event, payload);
+export const emitToUser = (userId, event, payload) => bus()?.to(`user:${userId}`).emit(event, payload);
+
+// A removed member's sockets must leave the project room
+export const kickFromProject = (projectId, userId) =>
+  bus()?.in(`user:${userId}`).socketsLeave(`project:${projectId}`);
+
+/* ----------------------------- presence helpers -----------------------------
+ * No in-memory maps: presence is derived from the sockets themselves (fetchSockets),
+ * which works across many server instances when the Redis adapter is attached.     */
+
+async function boardViewers(projectId, exceptSocketId) {
+  const sockets = await io.in(`project:${projectId}`).fetchSockets();
+  const ids = new Set();
+  for (const s of sockets) {
+    if (s.id !== exceptSocketId && s.data.boards?.includes(projectId)) ids.add(s.data.user._id);
+  }
+  return [...ids];
+}
+
+async function broadcastPresence(projectId, exceptSocketId) {
+  io.to(`project:${projectId}`).emit('presence:update', { projectId, users: await boardViewers(projectId, exceptSocketId) });
+}
+
+async function onlineUserIds() {
+  const all = await io.fetchSockets();
+  return [...new Set(all.map((s) => s.data.user?._id).filter(Boolean))];
+}
+
+// Vercel may forward the function prefix (/api/socket-io) to the server. Strip it so the
+// default Socket.IO path (/socket.io) matches either way.
+export function stripVercelPrefix(server) {
+  const strip = (req) => { req.url = req.url.replace(/^\/api\/socket-io(?=\/socket\.io)/, ''); };
+  server.prependListener('request', strip);
+  server.prependListener('upgrade', strip);
+}
+
+export async function attachRedisAdapter(ioInstance) {
+  const pair = await redisPair();
+  if (!pair) return false;
+  ioInstance.adapter(createAdapter(pair.pub, pair.sub));
+  return true;
 }
 
 export function initSocket(httpServer, allowedOrigins) {
-  io = new Server(httpServer, { cors: { origin: allowedOrigins, credentials: true } });
+  io = new Server(httpServer, { cors: { origin: allowedOrigins, credentials: true }, transports: ['websocket'] });
 
   // Authenticate every socket with the same JWT used by the REST API.
   io.use(async (socket, next) => {
@@ -59,49 +73,49 @@ export function initSocket(httpServer, allowedOrigins) {
       const token = socket.handshake.auth?.token;
       if (!token) return next(new Error('unauthorized'));
       const { id } = jwt.verify(token, process.env.JWT_SECRET);
+      await connectDB();
       const user = await User.findById(id).select('name');
       if (!user) return next(new Error('unauthorized'));
       socket.data.user = { _id: String(user._id), name: user.name };
-      socket.data.boards = new Set();
+      socket.data.boards = []; // boards this socket is "viewing" (for presence)
       next();
     } catch {
       next(new Error('unauthorized'));
     }
   });
 
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     const { _id: userId, name } = socket.data.user;
+    const userRoom = `user:${userId}`;
 
     // personal room -> used for notifications and invites
-    socket.join(`user:${userId}`);
+    await socket.join(userRoom);
+    if ((await io.in(userRoom).fetchSockets()).length === 1) io.emit('presence:user', { userId, online: true });
 
-    if (!userSockets.has(userId)) userSockets.set(userId, new Set());
-    userSockets.get(userId).add(socket.id);
-    if (userSockets.get(userId).size === 1) io.emit('presence:user', { userId, online: true });
+    // who is online right now (answered with an ack; works across instances)
+    socket.on('presence:online', async (ack) => ack?.(await onlineUserIds()));
 
     // Join a project room. `presence: true` means "I'm looking at the board".
     socket.on('project:join', async ({ projectId, presence = false } = {}, ack) => {
       try {
         const ok = await Project.exists({ _id: projectId, 'members.user': userId });
         if (!ok) return ack?.({ ok: false });
-        socket.join(`project:${projectId}`);
-        if (presence) {
-          socket.data.boards.add(projectId);
-          addPresence(projectId, userId, socket.id);
-          io.to(`project:${projectId}`).emit('presence:update', {
-            projectId,
-            users: presenceList(projectId),
-          });
-        }
-        ack?.({ ok: true, users: presenceList(projectId) });
+        projectId = String(projectId);
+        if (presence && !socket.data.boards.includes(projectId)) socket.data.boards.push(projectId);
+        await socket.join(`project:${projectId}`);
+        if (presence) await broadcastPresence(projectId);
+        ack?.({ ok: true, users: await boardViewers(projectId) });
       } catch {
         ack?.({ ok: false });
       }
     });
 
-    socket.on('project:leave', ({ projectId } = {}) => {
-      socket.leave(`project:${projectId}`);
-      if (socket.data.boards.delete(projectId)) removePresence(projectId, userId, socket.id);
+    socket.on('project:leave', async ({ projectId } = {}) => {
+      projectId = String(projectId);
+      const wasViewing = socket.data.boards.includes(projectId);
+      socket.data.boards = socket.data.boards.filter((p) => p !== projectId);
+      await socket.leave(`project:${projectId}`);
+      if (wasViewing) await broadcastPresence(projectId);
     });
 
     // "Sara is typing..." indicator for task comments
@@ -110,13 +124,14 @@ export function initSocket(httpServer, allowedOrigins) {
       socket.to(`project:${projectId}`).emit('typing', { taskId, isTyping: !!isTyping, user: { _id: userId, name } });
     });
 
-    socket.on('disconnect', () => {
-      for (const projectId of socket.data.boards) removePresence(projectId, userId, socket.id);
-      const set = userSockets.get(userId);
-      set?.delete(socket.id);
-      if (set && set.size === 0) {
-        userSockets.delete(userId);
-        io.emit('presence:user', { userId, online: false });
+    // 'disconnecting' fires while the socket is still in its rooms
+    socket.on('disconnecting', async () => {
+      try {
+        for (const projectId of socket.data.boards) await broadcastPresence(projectId, socket.id);
+        const others = (await io.in(userRoom).fetchSockets()).filter((s) => s.id !== socket.id);
+        if (others.length === 0) io.emit('presence:user', { userId, online: false });
+      } catch (err) {
+        console.error('presence cleanup failed:', err.message);
       }
     });
   });
