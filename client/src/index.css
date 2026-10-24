@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { min-height: 100%; }
+  body { overscroll-behavior: none; font-feature-settings: 'tnum' 1; }
+  ::selection { background: #e1e0ff; }
+}
+
+@layer components {
+  .material-symbols-outlined {
+    font-family: 'Material Symbols Outlined';
+    font-weight: normal; font-style: normal; font-size: 20px; line-height: 1;
+    letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap;
+    word-wrap: normal; direction: ltr; -webkit-font-smoothing: antialiased; user-select: none;
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  .material-symbols-outlined.filled { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 h-10 text-label-lg transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed select-none; }
+  .btn-sm { @apply h-9 px-3 text-label-md; }
+  .btn-primary { @apply bg-[#6366F1] text-white hover:bg-[#4F46E5] active:bg-[#4338CA] shadow-sm; }
+  .btn-outline { @apply bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 hover:border-slate-300; }
+  .btn-ghost { @apply text-slate-500 hover:bg-[#EEF2FF] hover:text-[#6366F1]; }
+  .btn-danger { @apply bg-red-50 text-red-500 border border-red-300 hover:bg-red-500 hover:text-white; }
+
+  .input { @apply w-full h-[38px] rounded-lg border border-slate-200 bg-white px-3 text-body-md text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-[#6366F1] focus:ring-[3px] focus:ring-[#6366F1]/15; }
+  .textarea { @apply w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-body-md text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-[#6366F1] focus:ring-[3px] focus:ring-[#6366F1]/15; }
+  .card { @apply bg-white border border-slate-200 rounded-xl shadow-card; }
+  .pill { @apply inline-flex items-center gap-1 rounded-full px-2 h-[22px] text-label-sm whitespace-nowrap; }
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+.thin-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+.thin-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+
+@keyframes slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.toast-in { animation: slide-in 0.25s ease-out; }
+@keyframes pop { from { transform: scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
+.pop-in { animation: pop 0.15s ease-out; }
