@@ -1,7 +1,5 @@
-# TaskFlow — MERN Project Management Tool (Trello / Asana style)
+# TaskFlow — MERN Project Management Tool 
 
-Do alag projects: `server/` (Node + Express + MongoDB + Socket.io) aur `client/` (React + Vite + Tailwind).
-UI Stitch ke "TaskFlow Fluid Productivity" design system par based hai.
 
 ## Features
 - Auth (register / login / JWT, "remember me", change password, profile + avatar)
