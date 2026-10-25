@@ -52,9 +52,12 @@ async function onlineUserIds() {
 // Vercel may forward the function prefix (/api/socket-io) to the server. Strip it so the
 // default Socket.IO path (/socket.io) matches either way.
 export function stripVercelPrefix(server) {
-  const strip = (req) => { req.url = req.url.replace(/^\/api\/socket-io(?=\/socket\.io)/, ''); };
-  server.prependListener('request', strip);
-  server.prependListener('upgrade', strip);
+  const normalise = (req) => {
+    const m = req.url.match(/^\/api\/socket-io(?:\/socket\.io)?\/?(\?.*)?$/);
+    if (m) req.url = `/socket.io/${m[1] || ''}`;
+  };
+  server.prependListener('request', normalise);
+  server.prependListener('upgrade', normalise);
 }
 
 export async function attachRedisAdapter(ioInstance) {
