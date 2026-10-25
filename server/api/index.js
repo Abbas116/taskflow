@@ -1,5 +1,9 @@
-// Vercel Function: the whole REST API (Express). Real-time events are published to Redis,
-// and the socket function (api/socket-io.js) delivers them to connected browsers.
-import { createApp } from '../src/app.js';
+import http from 'http';
+import { createApp, allowedOrigins } from '../src/app.js';
+import { initSocket, attachRedisAdapter } from '../src/socket/index.js';
 
-export default createApp();
+const server = http.createServer(createApp());
+const io = initSocket(server, allowedOrigins, '/api/socket.io');
+await attachRedisAdapter(io);
+
+export default server;
