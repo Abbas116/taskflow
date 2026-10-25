@@ -67,8 +67,8 @@ export async function attachRedisAdapter(ioInstance) {
   return true;
 }
 
-export function initSocket(httpServer, allowedOrigins) {
-  io = new Server(httpServer, { cors: { origin: allowedOrigins, credentials: true }, transports: ['websocket'] });
+export function initSocket(httpServer, allowedOrigins, path = '/socket.io') {
+  io = new Server(httpServer, { path, cors: { origin: allowedOrigins, credentials: true }, transports: ['websocket'] });
 
   // Authenticate every socket with the same JWT used by the REST API.
   io.use(async (socket, next) => {
